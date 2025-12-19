@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  # LocalStack for AWS SQS emulation
+  localstack:
+    image: localstack/localstack:latest
+    container_name: localstack
+    ports:
+      - "4566:4566"            # LocalStack Gateway
+      - "4510-4559:4510-4559"  # External services port range
+    environment:
+      - SERVICES=sqs
+      - DEBUG=1
+      - AWS_DEFAULT_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+    volumes:
+      - "./localstack-init:/etc/localstack/init/ready.d"
+    networks:
+      - app-network
+
+  # RabbitMQ
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"   # AMQP port
+      - "15672:15672" # Management UI
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # NestJS Application (optional - can be run locally)
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nestjs-queue-api
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - QUEUE_PROVIDER=${QUEUE_PROVIDER:-rabbitmq}
+      - AWS_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_ENDPOINT=http://localstack:4566
+      - SQS_QUEUE_URL=http://localstack:4566/000000000000/test-queue
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+      - RABBITMQ_QUEUE_NAME=test-queue
+      - RABBITMQ_EXCHANGE_NAME=test-exchange
+      - RABBITMQ_ROUTING_KEY=test-routing-key
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      localstack:
+        condition: service_started
+    networks:
+      - app-network
+    volumes:
+      - .:/app
+      - /app/node_modules
+
+volumes:
+  rabbitmq-data:
+
+networks:
+  app-network:
+    driver: bridge

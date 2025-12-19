@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - Queue Management System</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <h1>
+                <span class="text">Queue Admin</span>
+            </h1>
+            <div class="subtitle">Control Panel</div>
+        </div>
+        <ul class="nav-menu">
+            <li class="nav-item active" onclick="showSection('dashboard')">
+                <span>Dashboard</span>
+            </li>
+        </ul>
+        
+        <!-- Message History Section -->
+        <div class="nav-section">Message History</div>
+        <div class="nav-tree">
+            <div class="nav-tree-item" onclick="showMessageHistory('published')">
+                <span>Published</span>
+                <span class="count" id="sidebarPublishedCount">0</span>
+            </div>
+            <div class="nav-tree-item" onclick="showMessageHistory('received')">
+                <span>Received</span>
+                <span class="count" id="sidebarReceivedCount">0</span>
+            </div>
+        </div>
+        
+        <!-- Quick Actions in Sidebar -->
+        <div class="sidebar-actions">
+            <button class="sidebar-btn" onclick="getQueueInfo()">
+                <span id="sidebarInfoBtnText">Queue Info</span>
+            </button>
+        </div>
+    </div>
+    
+    <!-- Main Content -->
+    <div class="main-content">
+        <!-- Top Bar -->
+        <div class="top-bar">
+            <h2>Dashboard Overview</h2>
+            <div class="status-badge">
+                <div class="badge" id="apiStatusBadge">
+                    <span id="apiStatus">Checking...</span>
+                </div>
+                <div class="badge online" id="queueBadge">
+                    <span id="queueProvider">Loading...</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Content -->
+        <div class="content">
+            <!-- Stats Section -->
+            <div class="stats-grid">
+                <div class="stat-card success">
+                    <div class="stat-header">
+                        <div>
+                            <div class="stat-label">Messages Published</div>
+                            <div class="stat-value" id="publishedCount">0</div>
+                            <div class="stat-change">↑ Today</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="stat-card info">
+                    <div class="stat-header">
+                        <div>
+                            <div class="stat-label">Messages Received</div>
+                            <div class="stat-value" id="receivedCount">0</div>
+                            <div class="stat-change">↓ Processed</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="stat-card warning">
+                    <div class="stat-header">
+                        <div>
+                            <div class="stat-label">Queue Size</div>
+                            <div class="stat-value" id="queueSize">0</div>
+                            <div class="stat-change">Pending</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <div>
+                            <div class="stat-label">Response Time</div>
+                            <div class="stat-value" id="responseTime">--</div>
+                            <div class="stat-change">Average</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Split Layout: Left (Forms) | Right (Results) -->
+            <div class="split-grid">
+                <!-- Left Pane: Actions -->
+                <div class="left-pane">
+                    <!-- Publish Message Card -->
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">Publish Message</div>
+                        </div>
+                        <form id="publishForm">
+                            <div class="form-group">
+                                <label for="message">Message Content</label>
+                                <textarea id="message" placeholder="Enter your message here..." required>Hello from Queue API!</textarea>
+                            </div>
+                            <div class="form-group">
+                                <label for="metadata">Metadata (JSON)</label>
+                                <textarea id="metadata" placeholder='{"userId": "user-123", "action": "test"}'>{"userId": "user-123", "action": "test"}</textarea>
+                            </div>
+                            <button type="submit">
+                                <span class="btn-text">Publish Message</span>
+                            </button>
+                        </form>
+                    </div>
+                    
+                    <!-- Receive Messages Card -->
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">Receive Messages</div>
+                        </div>
+                        <form id="receiveForm">
+                            <div class="form-group">
+                                <label for="maxMessages">Maximum Messages</label>
+                                <input type="number" id="maxMessages" min="1" max="100" value="10">
+                            </div>
+                            <div class="form-group">
+                                <label for="waitTime">Wait Time (seconds)</label>
+                                <input type="number" id="waitTime" min="0" max="20" value="5">
+                            </div>
+                            <button type="submit">
+                                <span class="btn-text">Receive Messages</span>
+                            </button>
+                        </form>
+                    </div>
+                </div>
+                
+                <!-- Right Pane: Result Viewer -->
+                <div class="right-pane">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">Result Viewer</div>
+                        </div>
+                        <div style="margin-bottom: 8px;">
+                            <strong style="font-size: 0.9em; color: #475569;" id="messagesTitle">Message</strong>
+                        </div>
+                        <div class="messages-container" id="resultMessages">
+                            <div class="empty-state">
+                                <div class="icon">📭</div>
+                                <div>No messages to display</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const API_BASE = 'http://localhost:3000';
+        let stats = {
+            published: 0,
+            received: 0,
+            queueSize: 0
+        };
+        
+        let messageHistory = {
+            published: [],
+            received: []
+        };
+        
+        // Initialize
+        window.onload = async () => {
+            await checkApiStatus();
+            await refreshStats();
+            // Auto-refresh every 10 seconds
+            setInterval(refreshStats, 10000);
+        };
+        
+        // Check API Status
+        async function checkApiStatus() {
+            try {
+                const start = Date.now();
+                const response = await fetch(`${API_BASE}/`);
+                const duration = Date.now() - start;
+                const data = await response.json();
+                
+                document.getElementById('apiStatus').textContent = 'Online';
+                document.getElementById('apiStatusBadge').className = 'badge online';
+                document.getElementById('queueProvider').textContent = data.queue.provider.toUpperCase();
+                document.getElementById('responseTime').textContent = `${duration}ms`;
+            } catch (error) {
+                document.getElementById('apiStatus').textContent = 'Offline';
+                document.getElementById('apiStatusBadge').className = 'badge offline';
+                document.getElementById('queueProvider').textContent = 'Disconnected';
+                document.getElementById('responseTime').textContent = '--';
+            }
+        }
+        
+        // Refresh Stats
+        async function refreshStats() {
+            await checkApiStatus();
+            
+            // Fetch actual queue info to get real queue size
+            try {
+                const response = await fetch(`${API_BASE}/queue/info`);
+                if (response.ok) {
+                    const queueInfo = await response.json();
+                    // Update queue size from actual queue info
+                    if (queueInfo.approximateNumberOfMessages !== undefined) {
+                        stats.queueSize = queueInfo.approximateNumberOfMessages;
+                    }
+                }
+            } catch (error) {
+                console.error('Error fetching queue info:', error);
+            }
+            
+            document.getElementById('publishedCount').textContent = stats.published;
+            document.getElementById('receivedCount').textContent = stats.received;
+            document.getElementById('queueSize').textContent = stats.queueSize;
+            
+            // Update sidebar counts
+            document.getElementById('sidebarPublishedCount').textContent = messageHistory.published.length;
+            document.getElementById('sidebarReceivedCount').textContent = messageHistory.received.length;
+        }
+        
+        // Format Message ID with provider label
+        function formatMessageId(id) {
+            if (!id || id === 'N/A') return 'N/A';
+            
+            // Convert to string if it's a number (deliveryTag from RabbitMQ)
+            id = String(id);
+            
+            // Check if it's a comma-separated list (composite queue publish response)
+            if (id.includes(',')) {
+                const ids = id.split(',').map(i => i.trim());
+                return ids.map(singleId => {
+                    // UUID pattern for SQS
+                    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(singleId)) {
+                        return `${singleId} <span style="color: #10b981; font-weight: 600;">(SQS)</span>`;
+                    }
+                    // Timestamp pattern for RabbitMQ
+                    else if (/^\d{13}-[a-z0-9]+$/i.test(singleId)) {
+                        return `${singleId} <span style="color: #f59e0b; font-weight: 600;">(RabbitMQ)</span>`;
+                    }
+                    return singleId;
+                }).join('<br>');
+            }
+            
+            // Single ID - UUID pattern for SQS
+            if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+                return `${id} <span style="color: #10b981; font-weight: 600;">(SQS)</span>`;
+            }
+            // Timestamp pattern for RabbitMQ
+            else if (/^\d{13}-[a-z0-9]+$/i.test(id)) {
+                return `${id} <span style="color: #f59e0b; font-weight: 600;">(RabbitMQ)</span>`;
+            }
+            // Numeric deliveryTag from RabbitMQ
+            else if (/^\d+$/.test(id)) {
+                return `${id} <span style="color: #f59e0b; font-weight: 600;">(RabbitMQ DeliveryTag)</span>`;
+            }
+            // Base64 SQS receipt handle - check if it's a valid Base64 string
+            else if (/^[A-Za-z0-9+/=]+$/.test(id) && id.length > 50) {
+                // Truncate long Base64 strings for display
+                const truncated = id.length > 80 ? id.substring(0, 40) + '...' + id.substring(id.length - 40) : id;
+                return `<span style="word-break: break-all; font-size: 0.85em;">${truncated}</span> <span style="color: #10b981; font-weight: 600;">(SQS Receipt)</span>`;
+            }
+            // Other long format
+            else if (id.length > 50) {
+                return `<span style="word-break: break-all;">${id}</span> <span style="color: #f59e0b; font-weight: 600;">(RabbitMQ)</span>`;
+            }
+            
+            return id;
+        }
+        
+        // Show Section
+        function showSection(section) {
+            document.querySelectorAll('.nav-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            event.target.closest('.nav-item').classList.add('active');
+        }
+        
+        // Show Message History
+        function showMessageHistory(type) {
+            const messages = messageHistory[type];
+            const messagesTitle = document.getElementById('messagesTitle');
+            
+            if (messages.length === 0) {
+                if (messagesTitle) {
+                    messagesTitle.textContent = type.charAt(0).toUpperCase() + type.slice(1) + ' Messages';
+                }
+                document.getElementById('resultMessages').innerHTML = `
+                    <div class="empty-state">
+                        <div class="icon">📭</div>
+                        <div>No ${type} messages in history</div>
+                    </div>
+                `;
+                return;
+            }
+            
+            displayMessages(messages, 'resultMessages', type.charAt(0).toUpperCase() + type.slice(1));
+        }
+        
+        // Publish Message
+        document.getElementById('publishForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const button = e.target.querySelector('button');
+            const btnText = button.querySelector('.btn-text');
+            const originalText = btnText.textContent;
+            
+            try {
+                btnText.innerHTML = '<span class="spinner"></span> Publishing...';
+                button.disabled = true;
+                
+                const message = document.getElementById('message').value;
+                const metadataText = document.getElementById('metadata').value;
+                let metadata = {};
+                
+                try {
+                    metadata = metadataText ? JSON.parse(metadataText) : {};
+                } catch (err) {
+                    throw new Error('Invalid JSON in metadata field');
+                }
+                
+                const response = await fetch(`${API_BASE}/queue/publish`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message, metadata })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    stats.published++;
+                    stats.queueSize++;
+                    // Add to published history with the actual message content
+                    messageHistory.published.push({
+                        id: data.messageId,
+                        body: { message, metadata },
+                        timestamp: data.timestamp,
+                        type: 'single'
+                    });
+                    
+                    // Reflect in Result Viewer with the message content
+                    const publishData = {
+                        ...data,
+                        messageContent: message,
+                        metadata: metadata
+                    };
+                    showResponse(publishData, 'Publish Message');
+                    await refreshStats();
+                } else {
+                    showResponse(data);
+                }
+            } catch (error) {
+                showResponse({ error: error.message });
+            } finally {
+                btnText.textContent = originalText;
+                button.disabled = false;
+            }
+        });
+        
+        // Receive Messages
+        document.getElementById('receiveForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const button = e.target.querySelector('button');
+            const btnText = button.querySelector('.btn-text');
+            const originalText = btnText.textContent;
+            
+            try {
+                btnText.innerHTML = '<span class="spinner"></span> Receiving...';
+                button.disabled = true;
+                
+                const maxMessages = document.getElementById('maxMessages').value;
+                const waitTime = document.getElementById('waitTime').value;
+                
+                const response = await fetch(
+                    `${API_BASE}/queue/receive?maxMessages=${maxMessages}&waitTimeSeconds=${waitTime}`
+                );
+                const data = await response.json();
+                
+                if (response.ok && data.messages) {
+                    // Ensure received count doesn't exceed published count
+                    const maxReceivable = stats.published - stats.received;
+                    const actualReceived = Math.min(data.messages.length, maxReceivable);
+                    
+                    stats.received += actualReceived;
+                    stats.queueSize = Math.max(0, stats.queueSize - actualReceived);
+                    
+                    // Add to received history (only up to maxReceivable)
+                    data.messages.slice(0, actualReceived).forEach(msg => {
+                        messageHistory.received.push(msg);
+                    });
+                    
+                    // Reflect in Result Viewer
+                    showResponse(data, 'Receive Messages');
+                    await refreshStats();
+                } else {
+                    showResponse(data);
+                }
+            } catch (error) {
+                showResponse({ error: error.message });
+            } finally {
+                btnText.textContent = originalText;
+                button.disabled = false;
+            }
+        });
+        
+        // Get Queue Info
+        async function getQueueInfo() {
+            const sidebarBtnText = document.getElementById('sidebarInfoBtnText');
+            const originalText = sidebarBtnText ? sidebarBtnText.textContent : 'Queue Info';
+            
+            try {
+                if (sidebarBtnText) {
+                    sidebarBtnText.innerHTML = '<span class="spinner"></span>';
+                }
+                
+                const response = await fetch(`${API_BASE}/queue/info`);
+                const data = await response.json();
+                showResponse(data, 'Queue Info');
+            } catch (error) {
+                showResponse({ error: error.message });
+            } finally {
+                if (sidebarBtnText) {
+                    sidebarBtnText.textContent = originalText;
+                }
+            }
+        }
+        
+        // Display Messages (to the right-hand Result Viewer by default)
+        function displayMessages(messages, containerId = 'resultMessages', actionTitle = '') {
+            const container = document.getElementById(containerId);
+            const messagesTitle = document.getElementById('messagesTitle');
+            
+            // Update messages title with animation and persistent color
+            if (messagesTitle && actionTitle) {
+                messagesTitle.textContent = actionTitle + ' Messages';
+                
+                // Remove all action classes
+                messagesTitle.classList.remove('action-publish', 'action-receive', 'action-info', 'action-clear', 'action-history', 'title-animate');
+                
+                // Determine action type and apply color class
+                let actionClass = '';
+                if (actionTitle.includes('Publish') || actionTitle.toLowerCase().includes('published')) actionClass = 'action-publish';
+                else if (actionTitle.includes('Receive') || actionTitle.toLowerCase().includes('received')) actionClass = 'action-receive';
+                else if (actionTitle.includes('Queue Info')) actionClass = 'action-info';
+                else if (actionTitle.includes('Clear')) actionClass = 'action-clear';
+                else if (actionTitle.includes('History') || actionTitle.toLowerCase().includes('bulk')) actionClass = 'action-history';
+                
+                if (actionClass) {
+                    messagesTitle.classList.add(actionClass);
+                }
+                
+                void messagesTitle.offsetWidth; // Trigger reflow
+                messagesTitle.classList.add('title-animate');
+            } else if (messagesTitle) {
+                messagesTitle.textContent = 'Messages';
+                messagesTitle.classList.remove('action-publish', 'action-receive', 'action-info', 'action-clear', 'action-history', 'title-animate');
+                void messagesTitle.offsetWidth;
+                messagesTitle.classList.add('title-animate');
+            }
+            
+            if (!messages || messages.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="icon">📭</div>
+                        <div>No messages available</div>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = messages.map(msg => `
+                <div class="message-item">
+                    <div class="message-id">ID: ${formatMessageId(msg.id)}</div>
+                    <div class="message-body">${JSON.stringify(msg.body, null, 2)}</div>
+                    ${msg.attributes && Object.keys(msg.attributes).length > 0 ? `<div class="message-attributes"><strong>Attributes:</strong> ${JSON.stringify(msg.attributes)}</div>` : ''}
+                    <div class="message-timestamp">⏰ ${new Date(msg.timestamp).toLocaleString()}</div>
+                </div>
+            `).join('');
+        }
+        
+        // Show Response: display in Result Viewer based on action type
+        function showResponse(data, actionTitle = 'Response') {
+            const messagesContainer = document.getElementById('resultMessages');
+            const messagesTitle = document.getElementById('messagesTitle');
+            
+            if (!messagesContainer || !messagesTitle) return;
+            
+            // Update title with animation and color
+            messagesTitle.classList.remove('action-publish', 'action-receive', 'action-info', 'action-clear', 'action-history', 'title-animate');
+            
+            let actionClass = '';
+            if (actionTitle.includes('Publish')) {
+                actionClass = 'action-publish';
+                messagesTitle.textContent = 'Published Message';
+                // Show the actual message content that was published
+                const messageContent = data.messageContent || 'N/A';
+                const metadata = data.metadata || {};
+                messagesContainer.innerHTML = `
+                    <div class="message-item">
+                        <div class="message-id">Message ID: ${formatMessageId(data.messageId)}</div>
+                        <div class="message-body"><strong>Content:</strong><br>${messageContent}<br><br><strong>Metadata:</strong><br>${JSON.stringify(metadata, null, 2)}</div>
+                        <div class="message-timestamp">⏰ ${new Date(data.timestamp || Date.now()).toLocaleString()}</div>
+                    </div>
+                `;
+            } else if (actionTitle.includes('Receive') && data.messages && Array.isArray(data.messages)) {
+                actionClass = 'action-receive';
+                messagesTitle.textContent = 'Received Messages';
+                // Directly render messages without calling displayMessages to avoid title duplication
+                if (data.messages.length === 0) {
+                    messagesContainer.innerHTML = `
+                        <div class="empty-state">
+                            <div class="icon">📭</div>
+                            <div>No messages available</div>
+                        </div>
+                    `;
+                } else {
+                    messagesContainer.innerHTML = data.messages.map(msg => `
+                        <div class="message-item">
+                            <div class="message-id">ID: ${formatMessageId(msg.id)}</div>
+                            <div class="message-body">${JSON.stringify(msg.body, null, 2)}</div>
+                            ${msg.attributes ? `<div style="margin-top: 8px; font-size: 0.85em; color: #64748b;">
+                                <strong>Attributes:</strong> ${JSON.stringify(msg.attributes)}
+                            </div>` : ''}
+                            <div class="message-timestamp">⏰ ${new Date(msg.timestamp).toLocaleString()}</div>
+                        </div>
+                    `).join('');
+                }
+            } else if (actionTitle.includes('Queue Info')) {
+                actionClass = 'action-info';
+                messagesTitle.textContent = 'Queue Information';
+                messagesContainer.innerHTML = `
+                    <div class="message-item">
+                        <div class="message-body">${JSON.stringify(data, null, 2)}</div>
+                    </div>
+                `;
+            } else if (actionTitle.includes('Clear')) {
+                actionClass = 'action-clear';
+                messagesTitle.textContent = 'Clear Queue History';
+                messagesContainer.innerHTML = `
+                    <div class="message-item">
+                        <div class="message-body">${JSON.stringify(data, null, 2)}</div>
+                        <div class="message-timestamp">⏰ ${new Date().toLocaleString()}</div>
+                    </div>
+                `;
+            } else if (actionTitle.includes('History')) {
+                actionClass = 'action-history';
+                messagesTitle.textContent = actionTitle;
+            } else {
+                // Default: show JSON
+                messagesContainer.innerHTML = `
+                    <div class="message-item">
+                        <div class="message-body">${JSON.stringify(data, null, 2)}</div>
+                    </div>
+                `;
+            }
+            
+            if (actionClass) {
+                messagesTitle.classList.add(actionClass);
+            }
+            
+            void messagesTitle.offsetWidth;
+            messagesTitle.classList.add('title-animate');
+        }
+    </script>
+</body>
+</html>
